@@ -1,6 +1,8 @@
 package signify
 
-import "fmt"
+import (
+	"fmt"
+)
 
 const (
 	keyNumLength    = 8
@@ -53,18 +55,22 @@ type Public struct {
 	key     [publicKeyLength]byte
 }
 
-func (pub *Public) KeyID() uint64 {
-	// TODO: parse uint64
-}
-
-func LoadPublic(data []byte) (*Public, error) {
-	// TODO: base64 decode
-
+func loadPublicKeyFromBytes(data []byte) {
 	if len(data) != (keyAlgoLength + keyNumLength + publicKeyLength) {
-		return fmt.Errorf("signify: invalid public key length %d", len(data))
+		return nil, fmt.Errorf("signify: invalid public key length %d", len(data))
 	}
 
-	// TODO: parse key based on algorithm
+	pub := &Public{}
+	didx := 0
+	copy(pub.keyAlgo[:], data[:keyAlgoLength])
+	didx += keyAlgoLength
+
+	copy(pub.keyNum[:], data[didx:didx+keyNumLength])
+	didx += keyNumLength
+
+	copy(pub.key[:], data[didx:didx+publicKeyLength])
+
+	return pub, nil
 }
 
 // TODO: signature verification
