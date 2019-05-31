@@ -2,6 +2,7 @@ package signify
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha512"
 	"encoding/binary"
 	"errors"
@@ -23,13 +24,38 @@ const (
 	kdfAlgoLength   = 2
 	saltLength      = 16
 	checksumLength  = 8
+	kdfRounds       = 42
 )
 
-var PassphrasePrompt = func() ([]byte, error) {
-	return terminal.ReadPassword(0)
+// PassphrasePrompt prompts the user for a passphrase. If confirm is true, the
+// passphrase will be confirmed.
+var PassphrasePrompt = func(confirm bool) ([]byte, error) {
+	fmt.Printf("Password: ")
+	passphrase, err := terminal.ReadPassword(0)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println()
+	if !confirm {
+		return passphrase, nil
+	}
+
+	fmt.Printf("Confirm password: ")
+	confirmPassphrase, err := terminal.ReadPassword(0)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println()
+
+	if !bytes.Equal(passphrase, confirmPassphrase) {
+		return nil, errors.New("passphrases don't match")
+	}
+
+	return passphrase, nil
 }
 
-// Private is a Signify private key.
+// Private is a signify private key.
 type Private struct {
 	keyAlgo   [keyAlgoLength]uint8
 	kdfAlgo   [kdfAlgoLength]uint8
@@ -40,10 +66,24 @@ type Private struct {
 	key       [secretKeyLength]uint8
 }
 
+func (priv *Private) encode() []byte {
+	buf := &bytes.Buffer{}
+	buf.Write(priv.keyAlgo[:])
+	buf.Write(priv.kdfAlgo[:])
+	binary.Write(buf, binary.BigEndian, priv.kdfRounds)
+	buf.Write(priv.salt[:])
+	buf.Write(priv.checksum[:])
+	buf.Write(priv.keyNum[:])
+	buf.Write(priv.key[:])
+	return buf.Bytes()
+}
+
+// IsEncrypted returns true if the key is passphrase-protected.
 func (priv *Private) IsEncrypted() bool {
 	return priv.kdfRounds > 0
 }
 
+// check verifies that the key has been decrypted properly.
 func (priv *Private) check() error {
 	digest := sha512.Sum512(priv.key[:])
 	if !bytes.Equal(digest[:checksumLength], priv.checksum[:]) {
@@ -52,7 +92,7 @@ func (priv *Private) check() error {
 	return nil
 }
 
-func (priv *Private) crypt(password []byte) error {
+func (priv *Private) decrypt(password []byte) error {
 	if !priv.IsEncrypted() {
 		return nil
 	}
@@ -150,7 +190,12 @@ func readPrivateKeyPath(path string) (*Private, error) {
 	return readPrivateKeyFile(data)
 }
 
+// Sign signs the message and outputs a well-formed signify signature.
 func Sign(privatePath, messagePath, signaturePath string) error {
+	if signaturePath == "" {
+		signaturePath = messagePath + ".sig"
+	}
+
 	priv, err := readPrivateKeyPath(privatePath)
 	if err != nil {
 		return err
@@ -158,12 +203,12 @@ func Sign(privatePath, messagePath, signaturePath string) error {
 
 	if priv.IsEncrypted() {
 		var passphrase []byte
-		passphrase, err := PassphrasePrompt()
+		passphrase, err := PassphrasePrompt(false)
 		if err != nil {
 			return err
 		}
 
-		err = priv.crypt(passphrase)
+		err = priv.decrypt(passphrase)
 		if err != nil {
 			return err
 		}
@@ -183,22 +228,15 @@ func Sign(privatePath, messagePath, signaturePath string) error {
 		return err
 	}
 
-	dat := &dataFile{}
 	pubKeyPath := strings.TrimSuffix(privatePath, ".sec") + ".pub"
-	dat.comment = "untrusted comment: verify with " + filepath.Base(pubKeyPath)
-	dat.data = sig.Encode()
-	err = ioutil.WriteFile(signaturePath, dat.Encode(), 0644)
+	comment := "untrusted comment: verify with " + filepath.Base(pubKeyPath)
+	err = writeDataFile(signaturePath, comment, sig.encode())
 	if err != nil {
 		return err
 	}
 
 	return nil
 }
-
-// TODO: load key
-// TODO: decrypt key
-// TODO: decrypt data
-// TODO: sign data
 
 // Public is a Signify public key.
 type Public struct {
@@ -207,13 +245,21 @@ type Public struct {
 	key     [publicKeyLength]byte
 }
 
+func (pub *Public) encode() []byte {
+	buf := &bytes.Buffer{}
+	buf.Write(pub.keyAlgo[:])
+	buf.Write(pub.keyNum[:])
+	buf.Write(pub.key[:])
+	return buf.Bytes()
+}
+
 func (pub *Public) verifyEd25519(message []byte, sig *Signature) error {
 	if string(pub.keyAlgo[:]) != "Ed" {
 		return errors.New("signify: not an Ed25519 public key")
 	}
 
 	if string(sig.pkAlgo[:]) != "Ed" {
-		return errors.New("signify: not an Ed25519 signature")
+		return errors.New("signify: not an Ed25519 signature (" + string(sig.pkAlgo[:]) + ")")
 	}
 
 	if !bytes.Equal(pub.keyNum[:], sig.keyNum[:]) {
@@ -272,7 +318,12 @@ func readPublicKeyPath(path string) (*Public, error) {
 	return readPublicKeyFile(data)
 }
 
+// Verify checks the signature on a message.
 func Verify(publicPath, messagePath, signaturePath string) error {
+	if signaturePath == "" {
+		signaturePath = messagePath + ".sig"
+	}
+
 	pub, err := readPublicKeyPath(publicPath)
 	if err != nil {
 		return err
@@ -289,6 +340,79 @@ func Verify(publicPath, messagePath, signaturePath string) error {
 	}
 
 	err = pub.verify(message, sig)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// GenerateOptions control the generation of private keys.
+type GenerateOptions struct {
+	Rounds int
+}
+
+var defaultOptions = GenerateOptions{Rounds: 42}
+
+// GenerateKey generates a new signify keypair under keypath.sec and
+// keypath.pub. If passphrase is provided, the private key is
+// encrypted. If opts is nil, a set of sane defaults is provided.
+func GenerateKey(keyPath string, passphrase []byte, opts *GenerateOptions) error {
+	if opts == nil {
+		opts = &defaultOptions
+	}
+
+	edpub, edpriv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return err
+	}
+
+	priv := &Private{}
+	copy(priv.keyAlgo[:], []byte("Ed"))
+	copy(priv.kdfAlgo[:], []byte("BK"))
+
+	if len(passphrase) == 0 {
+		priv.kdfRounds = 0
+	} else {
+		priv.kdfRounds = uint32(opts.Rounds)
+	}
+
+	_, err = rand.Read(priv.salt[:])
+	if err != nil {
+		return err
+	}
+
+	_, err = rand.Read(priv.keyNum[:])
+	if err != nil {
+		return err
+	}
+
+	digest := sha512.Sum512(edpriv[:])
+	copy(priv.checksum[:], digest[:])
+	copy(priv.key[:], edpriv[:])
+
+	if len(passphrase) != 0 {
+		xorkey, err := bcrypt_pbkdf.Key(passphrase, priv.salt[:], int(priv.kdfRounds), secretKeyLength)
+		if err != nil {
+			return err
+		}
+
+		for i := range priv.key[:] {
+			priv.key[i] ^= xorkey[i]
+		}
+	}
+
+	err = writeDataFile(keyPath+".sec", "untrusted comment: signify private key", priv.encode())
+	if err != nil {
+		return err
+	}
+
+	pub := &Public{}
+	copy(pub.keyAlgo[:], priv.keyAlgo[:])
+	copy(pub.keyNum[:], priv.keyNum[:])
+	copy(pub.key[:], edpub[:])
+
+	err = writeDataFile(keyPath+".pub", "untrusted comment: signify public key", pub.encode())
 	if err != nil {
 		return err
 	}

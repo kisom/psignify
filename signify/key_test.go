@@ -3,6 +3,7 @@ package signify
 import (
 	"bytes"
 	"io/ioutil"
+	"os"
 	"testing"
 )
 
@@ -18,7 +19,7 @@ const (
 var testPublicKeyNum = []byte{0x98, 0xce, 0x92, 0xfb, 0x7e, 0x8c, 0x04, 0xd1}
 
 func init() {
-	PassphrasePrompt = func() ([]byte, error) {
+	PassphrasePrompt = func(_ bool) ([]byte, error) {
 		return []byte("passphrase"), nil
 	}
 }
@@ -55,6 +56,7 @@ func TestSign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer os.Remove(testSignature2)
 
 	err = Verify(testPublicKey, testMessage2, testSignature2)
 	if err != nil {

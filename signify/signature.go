@@ -2,7 +2,6 @@ package signify
 
 import (
 	"bytes"
-	"encoding/base64"
 	"io/ioutil"
 
 	"golang.org/x/crypto/ed25519"
@@ -10,21 +9,19 @@ import (
 
 const signatureLength = ed25519.SignatureSize
 
+// Signature is a signify signature.
 type Signature struct {
 	pkAlgo [keyAlgoLength]uint8
 	keyNum [keyNumLength]uint8
 	sig    [signatureLength]uint8
 }
 
-func (sig *Signature) Encode() []byte {
+func (sig *Signature) encode() []byte {
 	buf := &bytes.Buffer{}
 	buf.Write(sig.pkAlgo[:])
 	buf.Write(sig.keyNum[:])
 	buf.Write(sig.sig[:])
-
-	out := make([]byte, base64.StdEncoding.EncodedLen(buf.Len()))
-	base64.StdEncoding.Encode(out, buf.Bytes())
-	return out
+	return buf.Bytes()
 }
 
 func readSignatureData(data []byte) (*Signature, error) {

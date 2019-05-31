@@ -1,4 +1,4 @@
-module gitlab.com/kisom/crypted
+module github.com/kisom/psignify
 
 go 1.12
 

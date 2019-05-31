@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/base64"
+	"io/ioutil"
 	"strings"
 )
 
@@ -45,4 +46,15 @@ func readDataFileBytes(data []byte) (*dataFile, error) {
 	}
 
 	return dat, nil
+}
+
+func writeDataFile(path, comment string, data []byte) error {
+	encoded := make([]byte, base64.StdEncoding.EncodedLen(len(data)))
+	base64.StdEncoding.Encode(encoded, data)
+	dataFile := &dataFile{
+		comment: comment,
+		data:    encoded,
+	}
+
+	return ioutil.WriteFile(path, dataFile.Encode(), 0644)
 }
