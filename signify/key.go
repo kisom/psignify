@@ -12,7 +12,9 @@ import (
 	"strings"
 
 	"github.com/dchest/bcrypt_pbkdf"
+	"github.com/kisom/psignify/signify/edwards25519"
 	"golang.org/x/crypto/ed25519"
+
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -46,6 +48,7 @@ var PassphrasePrompt = func(confirm bool) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer zero(&confirmPassphrase)
 	fmt.Println()
 
 	if !bytes.Equal(passphrase, confirmPassphrase) {
@@ -207,6 +210,7 @@ func Sign(privatePath, messagePath, signaturePath string) error {
 		if err != nil {
 			return err
 		}
+		defer zero(&passphrase)
 
 		err = priv.decrypt(passphrase)
 		if err != nil {
@@ -236,6 +240,31 @@ func Sign(privatePath, messagePath, signaturePath string) error {
 	}
 
 	return nil
+}
+
+func (priv *Private) ToBox() (*[32]byte, error) {
+	err := priv.check()
+	if err != nil {
+		var passphrase []byte
+		passphrase, err = PassphrasePrompt(false)
+		if err != nil {
+			return nil, err
+		}
+
+		err = priv.decrypt(passphrase)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var sboxKey [32]byte
+	digest := sha512.Sum512(priv.key[:32])
+	digest[0] &= 248
+	digest[31] &= 127
+	digest[31] |= 64
+	copy(sboxKey[:], digest[:])
+	defer zero64(&digest)
+	return &sboxKey, nil
 }
 
 // Public is a Signify public key.
@@ -280,6 +309,29 @@ func (pub *Public) verify(message []byte, sig *Signature) error {
 	default:
 		return errors.New("signify: unknown key algo " + keyAlgo)
 	}
+}
+
+func (pub *Public) ToBox() (*[32]byte, error) {
+	var A = &edwards25519.ExtendedGroupElement{}
+	var oneMinusY = &edwards25519.FieldElement{}
+	var x = &edwards25519.FieldElement{}
+
+	edpub := [32]byte{}
+	copy(edpub[:], pub.key[:])
+
+	if !A.FromBytes(&edpub) {
+		return nil, errors.New("signify: invalid public key")
+	}
+
+	edwards25519.FeOne(oneMinusY)
+	edwards25519.FeSub(oneMinusY, oneMinusY, &A.Y)
+	edwards25519.FeOne(x)
+	edwards25519.FeAdd(x, x, &A.Y)
+	edwards25519.FeInvert(oneMinusY, oneMinusY)
+	edwards25519.FeMul(x, x, oneMinusY)
+	edwards25519.FeToBytes(&edpub, x)
+
+	return &edpub, nil
 }
 
 func readPublicKeyData(data []byte) (*Public, error) {
@@ -354,17 +406,14 @@ type GenerateOptions struct {
 
 var defaultOptions = GenerateOptions{Rounds: 42}
 
-// GenerateKey generates a new signify keypair under keypath.sec and
-// keypath.pub. If passphrase is provided, the private key is
-// encrypted. If opts is nil, a set of sane defaults is provided.
-func GenerateKey(keyPath string, passphrase []byte, opts *GenerateOptions) error {
+func generateKeypair(passphrase []byte, opts *GenerateOptions) (*Private, *Public, error) {
 	if opts == nil {
 		opts = &defaultOptions
 	}
 
 	edpub, edpriv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	priv := &Private{}
@@ -379,12 +428,12 @@ func GenerateKey(keyPath string, passphrase []byte, opts *GenerateOptions) error
 
 	_, err = rand.Read(priv.salt[:])
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	_, err = rand.Read(priv.keyNum[:])
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	digest := sha512.Sum512(edpriv[:])
@@ -394,7 +443,7 @@ func GenerateKey(keyPath string, passphrase []byte, opts *GenerateOptions) error
 	if len(passphrase) != 0 {
 		xorkey, err := bcrypt_pbkdf.Key(passphrase, priv.salt[:], int(priv.kdfRounds), secretKeyLength)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 
 		for i := range priv.key[:] {
@@ -402,15 +451,27 @@ func GenerateKey(keyPath string, passphrase []byte, opts *GenerateOptions) error
 		}
 	}
 
-	err = writeDataFile(keyPath+".sec", "untrusted comment: signify private key", priv.encode())
-	if err != nil {
-		return err
-	}
-
 	pub := &Public{}
 	copy(pub.keyAlgo[:], priv.keyAlgo[:])
 	copy(pub.keyNum[:], priv.keyNum[:])
 	copy(pub.key[:], edpub[:])
+
+	return priv, pub, nil
+}
+
+// GenerateKey generates a new signify keypair under keypath.sec and
+// keypath.pub. If passphrase is provided, the private key is
+// encrypted. If opts is nil, a set of sane defaults is provided.
+func GenerateKey(keyPath string, passphrase []byte, opts *GenerateOptions) error {
+	priv, pub, err := generateKeypair(passphrase, opts)
+	if err != nil {
+		return err
+	}
+
+	err = writeDataFile(keyPath+".sec", "untrusted comment: signify private key", priv.encode())
+	if err != nil {
+		return err
+	}
 
 	err = writeDataFile(keyPath+".pub", "untrusted comment: signify public key", pub.encode())
 	if err != nil {

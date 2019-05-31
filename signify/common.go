@@ -58,3 +58,23 @@ func writeDataFile(path, comment string, data []byte) error {
 
 	return ioutil.WriteFile(path, dataFile.Encode(), 0644)
 }
+
+func zero(buf *[]byte) {
+	if buf == nil {
+		return
+	}
+
+	for i := range *buf {
+		(*buf)[i] ^= (*buf)[i]
+	}
+}
+
+func zero64(buf *[64]byte) {
+	if buf == nil {
+		return
+	}
+
+	for i := range *buf {
+		(*buf)[i] ^= (*buf)[i]
+	}
+}

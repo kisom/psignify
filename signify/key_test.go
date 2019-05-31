@@ -5,6 +5,8 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+
+	"golang.org/x/crypto/nacl/box"
 )
 
 const (
@@ -61,5 +63,56 @@ func TestSign(t *testing.T) {
 	err = Verify(testPublicKey, testMessage2, testSignature2)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEncryption(t *testing.T) {
+	priv1, pub1, err := generateKeypair(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	boxPriv1, err := priv1.ToBox()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	boxPub1, err := pub1.ToBox()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	priv2, pub2, err := generateKeypair(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	boxPriv2, err := priv2.ToBox()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	boxPub2, err := pub2.ToBox()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	message := []byte("the bird is the word")
+	nonce := &[24]byte{}
+	out := box.Seal(nil, message, nonce, boxPub2, boxPriv1)
+	dec, ok := box.Open(nil, out, nonce, boxPub1, boxPriv2)
+	if !ok {
+		t.Fatal("signify: decryption failed")
+	}
+
+	if !bytes.Equal(message, dec) {
+		t.Logf("message: %x", message)
+		t.Logf("decrypt: %x", dec)
+		t.Fatal("signify: decryption failed")
+	}
+
+	_, ok = box.Open(nil, out, nonce, boxPub1, boxPriv1)
+	if ok {
+		t.Fatal("signify: decryption should fail")
 	}
 }
