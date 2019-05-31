@@ -25,19 +25,23 @@ func init() {
 
 func main() {
 	var pubKeyFile string
+	var privKeyFile string
 	var messageFile string
 	var signatureFile string
 	var noPass bool
 
 	var generate bool
+	var sign bool
 	var verify bool
 
 	flag.StringVar(&messageFile, "m", "", "message file")
 	flag.BoolVar(&noPass, "n", false, "use an empty passphrase")
 	flag.StringVar(&pubKeyFile, "p", "", "public key file")
+	flag.StringVar(&privKeyFile, "s", "", "private key file")
 	flag.StringVar(&signatureFile, "x", "", "signature file")
 
 	flag.BoolVar(&generate, "G", false, "generate keypair")
+	flag.BoolVar(&sign, "S", false, "sign a file")
 	flag.BoolVar(&verify, "V", false, "signature file")
 	flag.Parse()
 
@@ -61,6 +65,17 @@ func main() {
 		err = signify.GenerateKey(pubKeyFile, passphrase, nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to generate keypair: %s\n", err)
+			os.Exit(1)
+		}
+	} else if sign {
+		if privKeyFile == "" || messageFile == "" {
+			fmt.Fprintln(os.Stderr, "Signing requires a message and private key.")
+			os.Exit(1)
+		}
+
+		err := signify.Sign(privKeyFile, messageFile, signatureFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Signing %s failed: %s\n", messageFile, err)
 			os.Exit(1)
 		}
 	} else if verify {
