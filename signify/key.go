@@ -242,6 +242,7 @@ func Sign(privatePath, messagePath, signaturePath string) error {
 	return nil
 }
 
+// ToBox returns a nacl/box private key.
 func (priv *Private) ToBox() (*[32]byte, error) {
 	err := priv.check()
 	if err != nil {
@@ -311,6 +312,7 @@ func (pub *Public) verify(message []byte, sig *Signature) error {
 	}
 }
 
+// ToBox returns a nacl/box public key from this key.
 func (pub *Public) ToBox() (*[32]byte, error) {
 	var A = &edwards25519.ExtendedGroupElement{}
 	var oneMinusY = &edwards25519.FieldElement{}
