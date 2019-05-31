@@ -14,6 +14,14 @@ type dataFile struct {
 	data    []byte
 }
 
+func (dataFile *dataFile) Encode() []byte {
+	buf := bytes.NewBufferString(dataFile.comment)
+	buf.WriteByte('\n')
+	buf.Write(dataFile.data)
+	buf.WriteByte('\n')
+	return buf.Bytes()
+}
+
 func readDataFileBytes(data []byte) (*dataFile, error) {
 	var line string
 
