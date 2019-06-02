@@ -2,6 +2,7 @@ package signify
 
 import (
 	"bytes"
+	"crypto/rand"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -27,7 +28,7 @@ func init() {
 }
 
 func TestLoadKey(t *testing.T) {
-	pub, err := readPublicKeyPath(testPublicKey)
+	pub, err := LoadPublicKey(testPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +68,43 @@ func TestSign(t *testing.T) {
 }
 
 func TestEncryption(t *testing.T) {
-	priv1, pub1, err := generateKeypair(nil, nil)
+	priv, pub, err := GenerateKeypair(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	boxPriv, err := priv.ToBox()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	boxPub, err := pub.ToBox()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	epub, epriv, err := box.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	message := []byte("the bird is the word")
+	nonce := &[24]byte{}
+	out := box.Seal(nil, message, nonce, boxPub, epriv)
+	dec, ok := box.Open(nil, out, nonce, epub, boxPriv)
+	if !ok {
+		t.Fatal("signify: decryption failed")
+	}
+
+	if !bytes.Equal(message, dec) {
+		t.Logf("message: %x", message)
+		t.Logf("decrypt: %x", dec)
+		t.Fatal("signify: decryption failed")
+	}
+}
+
+func TestEncryption2(t *testing.T) {
+	priv1, pub1, err := GenerateKeypair(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +119,7 @@ func TestEncryption(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	priv2, pub2, err := generateKeypair(nil, nil)
+	priv2, pub2, err := GenerateKeypair(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
