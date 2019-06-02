@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/kisom/psignify/base64"
 	"github.com/kisom/psignify/signify"
 	"golang.org/x/crypto/nacl/auth"
 	"golang.org/x/crypto/nacl/box"
@@ -149,7 +150,7 @@ func Seal(publicPath, messagePath, encryptedPath string) error {
 		return err
 	}
 
-	encoder := newEncoder(encrypted)
+	encoder := base64.NewEncoder(encrypted)
 	defer encoder.Close()
 
 	return seal(pub, message, messageLen, encoder)
@@ -223,7 +224,7 @@ func Open(privatePath, encryptedPath, messagePath string) error {
 		return err
 	}
 
-	decoder := newDecoder(encrypted)
+	decoder := base64.NewDecoder(encrypted)
 
 	message, err := os.Create(messagePath)
 	if err != nil {

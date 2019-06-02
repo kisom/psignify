@@ -1,4 +1,4 @@
-package crypto
+package base64
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ func TestEncodeDecode(t *testing.T) {
 	}
 
 	out := &bytes.Buffer{}
-	enc := newEncoder(out)
+	enc := NewEncoder(out)
 	n, err := enc.Write(header[:])
 	if err != nil {
 		t.Fatal(err)
@@ -20,7 +20,7 @@ func TestEncodeDecode(t *testing.T) {
 		t.Fatalf("signify/crypto: short write: %d != 72", n)
 	}
 
-	dec := newDecoder(out)
+	dec := NewDecoder(out)
 	header2 := make([]byte, 72)
 	n, err = dec.Read(header2)
 	if err != nil {

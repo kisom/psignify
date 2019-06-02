@@ -1,4 +1,4 @@
-package crypto
+package base64
 
 import (
 	"encoding/base64"
@@ -6,25 +6,27 @@ import (
 )
 
 const (
-	decodedSize = 57
-	encodedSize = 76
+	decodedSize = 54
+	encodedSize = 72
 )
 
-type base64Encoder struct {
+// Encoder is a base64 encoder that introduces newlines at 72
+// characters.
+type Encoder struct {
 	line  int
 	w     io.Writer
 	buf   []byte
 	index int
 }
 
-func newEncoder(w io.Writer) io.WriteCloser {
-	return &base64Encoder{
+func NewEncoder(w io.Writer) io.WriteCloser {
+	return &Encoder{
 		w:   w,
 		buf: make([]byte, 3),
 	}
 }
 
-func (w *base64Encoder) Close() error {
+func (w *Encoder) Close() error {
 	if w.index > 0 {
 		out := make([]byte, base64.StdEncoding.EncodedLen(w.index))
 		base64.StdEncoding.Encode(out, w.buf[:w.index])
@@ -40,7 +42,7 @@ func (w *base64Encoder) Close() error {
 	return err
 }
 
-func (w *base64Encoder) Write(p []byte) (int, error) {
+func (w *Encoder) Write(p []byte) (int, error) {
 	out := make([]byte, 4)
 	written := 0
 
@@ -73,25 +75,23 @@ func (w *base64Encoder) Write(p []byte) (int, error) {
 	return written, nil
 }
 
-type base64Decoder struct {
-	line  int
-	r     io.Reader
-	buf   []byte
-	index int
+// Decoder is a base64 decoder that handles sources with newlines.
+type Decoder struct {
+	r io.Reader
 }
 
-func newDecoder(r io.Reader) io.ReadCloser {
-	return &base64Decoder{
-		r:   r,
-		buf: make([]byte, 4),
+// NewDecoder returns a new Decoder over a Reader.
+func NewDecoder(r io.Reader) io.ReadCloser {
+	return &Decoder{
+		r: r,
 	}
 }
 
-func (r *base64Decoder) Close() error {
+func (r *Decoder) Close() error {
 	return nil
 }
 
-func (r *base64Decoder) Read(p []byte) (int, error) {
+func (r *Decoder) Read(p []byte) (int, error) {
 	enclen := base64.StdEncoding.EncodedLen(len(p))
 	buf := make([]byte, 0, enclen)
 	c := make([]byte, 1)
