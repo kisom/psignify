@@ -1,3 +1,4 @@
+// Package base64 implements base64 encoding with line breaks.
 package base64
 
 import (
