@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
+	"path/filepath"
 
 	"github.com/kisom/psignify/crypto"
 	"github.com/kisom/psignify/signify"
@@ -25,6 +27,19 @@ func init() {
 		usage(os.Stdout)
 		os.Exit(0)
 	}
+}
+
+func defaultKeyBase() string {
+	user, err := user.Current()
+	if err != nil {
+		return ""
+	}
+
+	if user.HomeDir == "" {
+		return user.Username
+	}
+
+	return filepath.Join(user.HomeDir, ".signify", user.Username)
 }
 
 func main() {
@@ -54,6 +69,16 @@ func main() {
 	flag.BoolVar(&sign, "S", false, "sign a file")
 	flag.BoolVar(&verify, "V", false, "signature file")
 	flag.Parse()
+
+	keyBase := defaultKeyBase()
+
+	if privKeyFile == "" && keyBase != "" {
+		privKeyFile = keyBase + ".sec"
+	}
+
+	if pubKeyFile == "" && keyBase != "" {
+		pubKeyFile = keyBase + ".pub"
+	}
 
 	if generate {
 		var passphrase []byte
