@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/dchest/bcrypt_pbkdf"
-	"github.com/kisom/psignify/signify/edwards25519"
+	"github.com/kisom/psignify/signify/internal/edwards25519"
 	"golang.org/x/crypto/ed25519"
 
 	"golang.org/x/crypto/ssh/terminal"
