@@ -5,15 +5,21 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
+	"path/filepath"
 
+	"github.com/kisom/psignify/crypto"
 	"github.com/kisom/psignify/signify"
 )
 
 func usage(w io.Writer) {
 	fmt.Fprintf(w, `
-Usage: %s -V [-p pubkey] [-x sigfile] -m message
+Usage: %s -S -s seckey -m message [-x sigfile]
+       %s -V -p pubkey [-x sigfile] -m message
        %s -G [-n] -p keyname
-`, os.Args[0], os.Args[0])
+       %s -E -p pubkey -m message [-c encrypted]
+       %s -D -s privkey -c encrypted -m message
+`, os.Args[0], os.Args[0], os.Args[0], os.Args[0], os.Args[0])
 }
 
 func init() {
@@ -23,27 +29,56 @@ func init() {
 	}
 }
 
+func defaultKeyBase() string {
+	user, err := user.Current()
+	if err != nil {
+		return ""
+	}
+
+	if user.HomeDir == "" {
+		return user.Username
+	}
+
+	return filepath.Join(user.HomeDir, ".signify", user.Username)
+}
+
 func main() {
 	var pubKeyFile string
 	var privKeyFile string
 	var messageFile string
+	var encryptedFile string
 	var signatureFile string
 	var noPass bool
 
+	var decrypt bool
+	var encrypt bool
 	var generate bool
 	var sign bool
 	var verify bool
 
+	flag.StringVar(&encryptedFile, "c", "", "encrypted file")
 	flag.StringVar(&messageFile, "m", "", "message file")
 	flag.BoolVar(&noPass, "n", false, "use an empty passphrase")
 	flag.StringVar(&pubKeyFile, "p", "", "public key file")
 	flag.StringVar(&privKeyFile, "s", "", "private key file")
 	flag.StringVar(&signatureFile, "x", "", "signature file")
 
+	flag.BoolVar(&decrypt, "D", false, "decrypt a message")
+	flag.BoolVar(&encrypt, "E", false, "encrypt a message")
 	flag.BoolVar(&generate, "G", false, "generate keypair")
 	flag.BoolVar(&sign, "S", false, "sign a file")
 	flag.BoolVar(&verify, "V", false, "signature file")
 	flag.Parse()
+
+	keyBase := defaultKeyBase()
+
+	if privKeyFile == "" && keyBase != "" {
+		privKeyFile = keyBase + ".sec"
+	}
+
+	if pubKeyFile == "" && keyBase != "" {
+		pubKeyFile = keyBase + ".pub"
+	}
 
 	if generate {
 		var passphrase []byte
@@ -86,6 +121,22 @@ func main() {
 		}
 
 		fmt.Printf("%s: OK\n", messageFile)
+	} else if encrypt {
+		err := crypto.Seal(pubKeyFile, messageFile, encryptedFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("%s: OK\n", messageFile)
+	} else if decrypt {
+		err := crypto.Open(privKeyFile, encryptedFile, messageFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("%s: OK\n", encryptedFile)
 	} else {
 		usage(os.Stderr)
 		os.Exit(1)

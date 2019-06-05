@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/dchest/bcrypt_pbkdf"
-	"github.com/kisom/psignify/signify/edwards25519"
+	"github.com/kisom/psignify/signify/internal/edwards25519"
 	"golang.org/x/crypto/ed25519"
 
 	"golang.org/x/crypto/ssh/terminal"
@@ -86,8 +86,8 @@ func (priv *Private) IsEncrypted() bool {
 	return priv.kdfRounds > 0
 }
 
-// check verifies that the key has been decrypted properly.
-func (priv *Private) check() error {
+// Check verifies that the key has been decrypted properly.
+func (priv *Private) Check() error {
 	digest := sha512.Sum512(priv.key[:])
 	if !bytes.Equal(digest[:checksumLength], priv.checksum[:]) {
 		return errors.New("signify: invalid private key checksum")
@@ -113,7 +113,7 @@ func (priv *Private) decrypt(password []byte) error {
 		priv.key[i] ^= xorkey[i]
 	}
 
-	err = priv.check()
+	err = priv.Check()
 	if err != nil {
 		return err
 	}
@@ -184,7 +184,8 @@ func readPrivateKeyFile(data []byte) (*Private, error) {
 	return readPrivateKeyData(dat.data)
 }
 
-func readPrivateKeyPath(path string) (*Private, error) {
+// LoadPrivateKey reads a signify private key from disk.
+func LoadPrivateKey(path string) (*Private, error) {
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -199,7 +200,7 @@ func Sign(privatePath, messagePath, signaturePath string) error {
 		signaturePath = messagePath + ".sig"
 	}
 
-	priv, err := readPrivateKeyPath(privatePath)
+	priv, err := LoadPrivateKey(privatePath)
 	if err != nil {
 		return err
 	}
@@ -244,7 +245,7 @@ func Sign(privatePath, messagePath, signaturePath string) error {
 
 // ToBox returns a nacl/box private key.
 func (priv *Private) ToBox() (*[32]byte, error) {
-	err := priv.check()
+	err := priv.Check()
 	if err != nil {
 		var passphrase []byte
 		passphrase, err = PassphrasePrompt(false)
@@ -363,7 +364,8 @@ func readPublicKeyFile(data []byte) (*Public, error) {
 	return readPublicKeyData(dat.data)
 }
 
-func readPublicKeyPath(path string) (*Public, error) {
+// LoadPublicKey reads a signify public key from disk.
+func LoadPublicKey(path string) (*Public, error) {
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -378,7 +380,7 @@ func Verify(publicPath, messagePath, signaturePath string) error {
 		signaturePath = messagePath + ".sig"
 	}
 
-	pub, err := readPublicKeyPath(publicPath)
+	pub, err := LoadPublicKey(publicPath)
 	if err != nil {
 		return err
 	}
@@ -408,7 +410,8 @@ type GenerateOptions struct {
 
 var defaultOptions = GenerateOptions{Rounds: 42}
 
-func generateKeypair(passphrase []byte, opts *GenerateOptions) (*Private, *Public, error) {
+// GenerateKeypair returns a new private and public key.
+func GenerateKeypair(passphrase []byte, opts *GenerateOptions) (*Private, *Public, error) {
 	if opts == nil {
 		opts = &defaultOptions
 	}
@@ -465,7 +468,7 @@ func generateKeypair(passphrase []byte, opts *GenerateOptions) (*Private, *Publi
 // keypath.pub. If passphrase is provided, the private key is
 // encrypted. If opts is nil, a set of sane defaults is provided.
 func GenerateKey(keyPath string, passphrase []byte, opts *GenerateOptions) error {
-	priv, pub, err := generateKeypair(passphrase, opts)
+	priv, pub, err := GenerateKeypair(passphrase, opts)
 	if err != nil {
 		return err
 	}
